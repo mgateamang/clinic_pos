@@ -1,0 +1,304 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+ApplicationWindow {
+    id: root
+    visible: true
+    width: 900
+    height: 680
+    title: "AIDANS - Pharmacy POS & Real-Time Inventory (Elizabeth's Clinic)"
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 16
+        spacing: 16
+
+        // Left Area: POS & Cart
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 12
+
+            Label {
+                text: "Pharmacy Point-of-Sale (POS)"
+                font.pixelSize: 20
+                font.bold: true
+            }
+
+            // Prescription Lookup Row
+            GroupBox {
+                title: "1. Prescription Dispense (Optional)"
+                Layout.fillWidth: true
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    TextField {
+                        id: rxCodeInput
+                        placeholderText: "Enter Prescription Code (e.g. RX-...)"
+                        Layout.fillWidth: true
+                    }
+
+                    Button {
+                        text: "Load Rx"
+                        highlighted: true
+                        onClicked: controller.loadPrescription(rxCodeInput.text)
+                    }
+                }
+            }
+
+            // OTC Add Row
+            GroupBox {
+                title: "2. Over-the-Counter (OTC) Item Sale"
+                Layout.fillWidth: true
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    ComboBox {
+                        id: catCombo
+                        Layout.fillWidth: true
+                        model: controller.catalog
+                        textRole: "name"
+                    }
+
+                    Label { text: "Qty:" }
+                    SpinBox {
+                        id: otcQty
+                        from: 1
+                        to: 50
+                        value: 1
+                        Layout.preferredWidth: 80
+                    }
+
+                    Button {
+                        text: "+ Add to Cart"
+                        onClicked: {
+                            if (catCombo.currentIndex >= 0) {
+                                var item = controller.catalog[catCombo.currentIndex];
+                                controller.addItemToCart(item.id, item.name, item.unit_price, otcQty.value);
+                                otcQty.value = 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Cart Table
+            Label {
+                text: "Current Cart Items (" + controller.cart.length + "):"
+                font.bold: true
+            }
+
+            ListView {
+                id: cartListView
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: controller.cart
+                delegate: Rectangle {
+                    width: cartListView.width
+                    height: 40
+                    color: index % 2 === 0 ? "#f8fafc" : "#ffffff"
+                    border.color: "#e2e8f0"
+                    radius: 4
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 12
+
+                        Label {
+                            text: modelData.name
+                            font.bold: true
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
+                        }
+
+                        Label {
+                            text: modelData.quantity + "x"
+                            Layout.preferredWidth: 40
+                        }
+
+                        Label {
+                            text: Number(modelData.unit_price).toFixed(2) + " €"
+                            Layout.preferredWidth: 60
+                            color: "#64748b"
+                        }
+
+                        Label {
+                            text: Number(modelData.subtotal).toFixed(2) + " €"
+                            font.bold: true
+                            Layout.preferredWidth: 70
+                        }
+
+                        Button {
+                            text: "✕"
+                            onClicked: controller.removeItemFromCart(index)
+                        }
+                    }
+                }
+            }
+
+            // Checkout Bar
+            Rectangle {
+                Layout.fillWidth: true
+                height: 64
+                color: "#f1f5f9"
+                border.color: "#cbd5e1"
+                radius: 6
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 12
+
+                    Label {
+                        text: "Total: " + controller.totalAmount.toFixed(2) + " EUR"
+                        font.pixelSize: 18
+                        font.bold: true
+                        color: "#0f172a"
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Label { text: "Payment:" }
+                    ComboBox {
+                        id: payMethodCombo
+                        model: ["CASH", "CARD", "E_WALLET", "WEBHOOK_MOCK"]
+                        Layout.preferredWidth: 140
+                    }
+
+                    Button {
+                        text: "Clear"
+                        onClicked: controller.clearCart()
+                    }
+
+                    Button {
+                        text: "Checkout"
+                        highlighted: true
+                        enabled: !controller.isBusy && controller.cart.length > 0
+                        onClicked: controller.checkout(payMethodCombo.currentText, rxCodeInput.text)
+                    }
+                }
+            }
+
+            // Status Bar
+            Rectangle {
+                Layout.fillWidth: true
+                height: 32
+                color: "#e2e8f0"
+                radius: 4
+
+                Label {
+                    anchors.centerIn: parent
+                    text: controller.statusMessage.length > 0 ? controller.statusMessage : "Ready"
+                    font.pixelSize: 12
+                }
+            }
+        }
+
+        // Right Area: Low Stock & Reorder Alerts
+        Rectangle {
+            Layout.preferredWidth: 260
+            Layout.fillHeight: true
+            color: "#fffbeb"
+            border.color: "#fde68a"
+            radius: 8
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 8
+
+                Label {
+                    text: "⚠ Reorder Alerts (" + controller.lowStockAlerts.length + ")"
+                    font.bold: true
+                    color: "#b45309"
+                    font.pixelSize: 14
+                }
+
+                Label {
+                    text: "Automated inventory tracking"
+                    font.pixelSize: 11
+                    color: "#78350f"
+                }
+
+                ListView {
+                    id: alertList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: controller.lowStockAlerts
+                    delegate: Rectangle {
+                        width: alertList.width
+                        height: 52
+                        color: "#ffffff"
+                        border.color: "#fed7aa"
+                        radius: 4
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 2
+
+                            Label {
+                                text: modelData.name
+                                font.bold: true
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            RowLayout {
+                                Label {
+                                    text: "Stock: " + modelData.stock_quantity
+                                    font.bold: true
+                                    color: "#dc2626"
+                                    font.pixelSize: 11
+                                }
+                                Item { Layout.fillWidth: true }
+                                Label {
+                                    text: "Min: " + modelData.reorder_threshold
+                                    font.pixelSize: 11
+                                    color: "#64748b"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    Layout.fillWidth: true
+                    text: "Refresh Alerts"
+                    onClicked: controller.refreshData()
+                }
+
+                // Webhook test tool
+                GroupBox {
+                    title: "Mock Webhook Settlement"
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 4
+
+                        Button {
+                            Layout.fillWidth: true
+                            text: "Simulate Webhook PAID"
+                            enabled: controller.lastReceiptCode.length > 0
+                            onClicked: controller.simulatePaymentWebhook(controller.lastReceiptCode, "PAID")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Component.onCompleted: {
+        controller.refreshData();
+    }
+}
