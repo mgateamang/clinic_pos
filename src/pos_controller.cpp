@@ -1,4 +1,6 @@
 #include "pos_controller.hpp"
+#include <QSettings>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -6,12 +8,43 @@
 
 namespace aidans {
 
-PosController::PosController(QObject* parent)
-    : QObject(parent) {
+PosController::PosController(const QString& configPath, QObject* parent)
+    : QObject(parent), m_configPath(configPath) {
+    loadConfig();
+}
+
+void PosController::loadConfig() {
+    if (QFileInfo::exists(m_configPath)) {
+        QSettings settings(m_configPath, QSettings::IniFormat);
+        settings.beginGroup("Server");
+        QString url = settings.value("url", m_serverUrl).toString();
+        settings.endGroup();
+        if (!url.isEmpty()) {
+            m_serverUrl = url;
+            emit serverUrlChanged();
+        }
+    }
+}
+
+void PosController::saveServerUrl(const QString& url) {
+    QString trimmed = url.trimmed();
+    if (trimmed.isEmpty()) return;
+
+    m_serverUrl = trimmed;
+    emit serverUrlChanged();
+
+    QSettings settings(m_configPath, QSettings::IniFormat);
+    settings.beginGroup("Server");
+    settings.setValue("url", m_serverUrl);
+    settings.endGroup();
+    settings.sync();
+
+    setStatus("Server URL saved to " + m_configPath);
 }
 
 void PosController::setServerUrl(const QString& url) {
     m_serverUrl = url;
+    emit serverUrlChanged();
 }
 
 void PosController::setStatus(const QString& msg) {
@@ -26,6 +59,54 @@ void PosController::setBusy(bool busy) {
         m_isBusy = busy;
         emit isBusyChanged();
     }
+}
+
+void PosController::setServerOnline(bool online) {
+    if (m_isServerOnline != online) {
+        m_isServerOnline = online;
+        emit isServerOnlineChanged();
+    }
+}
+
+void PosController::setConnectionStatus(const QString& status) {
+    if (m_connectionStatus != status) {
+        m_connectionStatus = status;
+        emit connectionStatusChanged();
+    }
+}
+
+void PosController::testConnection(const QString& targetUrl) {
+    QString urlStr = targetUrl.trimmed();
+    if (urlStr.isEmpty()) urlStr = m_serverUrl;
+
+    setBusy(true);
+    setConnectionStatus("Pinging " + urlStr + "...");
+
+    QString healthUrl = urlStr;
+    if (!healthUrl.endsWith("/health") && !healthUrl.endsWith("/api/v1/health")) {
+        healthUrl = urlStr + "/health";
+    }
+
+    QUrl target(healthUrl);
+    QNetworkRequest req(target);
+    req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+
+    QNetworkReply* reply = m_netManager.get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, urlStr]() {
+        reply->deleteLater();
+        setBusy(false);
+
+        if (reply->error() == QNetworkReply::NoError) {
+            QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            QString service = doc.object().value("service").toString();
+            QString version = doc.object().value("version").toString();
+            setConnectionStatus(QString("Connected to %1 (%2 v%3)").arg(urlStr).arg(service).arg(version));
+            setServerOnline(true);
+        } else {
+            setConnectionStatus("Failed to connect: " + reply->errorString());
+            setServerOnline(false);
+        }
+    });
 }
 
 double PosController::calculateTotal() const {
@@ -121,7 +202,10 @@ void PosController::refreshData() {
     setStatus("Refreshing inventory catalog and reorder alerts...");
 
     // 1. Fetch Inventory Catalog
-    QNetworkRequest invReq(QUrl(m_serverUrl + "/inventory"));
+    QUrl invUrl(m_serverUrl + "/inventory");
+    QNetworkRequest invReq(invUrl);
+    invReq.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+
     QNetworkReply* invReply = m_netManager.get(invReq);
     connect(invReply, &QNetworkReply::finished, this, [this, invReply]() {
         invReply->deleteLater();
@@ -130,12 +214,19 @@ void PosController::refreshData() {
             if (doc.isArray()) {
                 m_catalog = doc.toVariant().toList();
                 emit catalogChanged();
+                setServerOnline(true);
             }
+        } else {
+            setServerOnline(false);
+            setStatus("Could not connect to clinic server: " + invReply->errorString());
         }
     });
 
     // 2. Fetch Low Stock Alerts
-    QNetworkRequest alertReq(QUrl(m_serverUrl + "/inventory/alerts"));
+    QUrl alertUrl(m_serverUrl + "/inventory/alerts");
+    QNetworkRequest alertReq(alertUrl);
+    alertReq.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+
     QNetworkReply* alertReply = m_netManager.get(alertReq);
     connect(alertReply, &QNetworkReply::finished, this, [this, alertReply]() {
         alertReply->deleteLater();
@@ -145,9 +236,11 @@ void PosController::refreshData() {
             if (doc.isArray()) {
                 m_lowStockAlerts = doc.toVariant().toList();
                 emit lowStockAlertsChanged();
+                setServerOnline(true);
                 setStatus("POS Catalog & Inventory Alerts updated.");
             }
         } else {
+            setServerOnline(false);
             setStatus("Could not connect to clinic server at " + m_serverUrl);
         }
     });
@@ -162,13 +255,17 @@ void PosController::loadPrescription(const QString& rxCode) {
     setBusy(true);
     setStatus("Looking up prescription " + rxCode + "...");
 
-    QNetworkRequest req(QUrl(m_serverUrl + "/prescriptions/" + rxCode.trimmed()));
+    QUrl reqUrl(m_serverUrl + "/prescriptions/" + rxCode.trimmed());
+    QNetworkRequest req(reqUrl);
+    req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+
     QNetworkReply* reply = m_netManager.get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply, rxCode]() {
         reply->deleteLater();
         setBusy(false);
 
         if (reply->error() == QNetworkReply::NoError) {
+            setServerOnline(true);
             QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
             QJsonObject obj = doc.object();
 
@@ -201,7 +298,10 @@ void PosController::loadPrescription(const QString& rxCode) {
 
             setStatus(QString("Loaded prescription %1 (%2 items)").arg(rxCode).arg(items.size()));
         } else {
-            setStatus("Prescription not found or invalid.");
+            if (reply->error() >= QNetworkReply::ConnectionRefusedError && reply->error() <= QNetworkReply::UnknownNetworkError) {
+                setServerOnline(false);
+            }
+            setStatus("Prescription not found or server error: " + reply->errorString());
         }
     });
 }
@@ -217,7 +317,9 @@ void PosController::checkout(const QString& paymentMethod, const QString& rxCode
 
     QByteArray payload = buildCheckoutPayload(paymentMethod, rxCode);
 
-    QNetworkRequest req(QUrl(m_serverUrl + "/pos/checkout"));
+    QUrl reqUrl(m_serverUrl + "/pos/checkout");
+    QNetworkRequest req(reqUrl);
+    req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = m_netManager.post(req, payload);
@@ -226,6 +328,7 @@ void PosController::checkout(const QString& paymentMethod, const QString& rxCode
         setBusy(false);
 
         if (reply->error() == QNetworkReply::NoError) {
+            setServerOnline(true);
             QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
             QJsonObject obj = doc.object();
             QString txCode = obj.value("transaction_code").toString();
@@ -240,6 +343,9 @@ void PosController::checkout(const QString& paymentMethod, const QString& rxCode
             setStatus(QString("Transaction completed! Receipt #%1 (%2 EUR) [%3]").arg(txCode).arg(total, 0, 'f', 2).arg(status));
             emit checkoutCompleted(txCode, total, status);
         } else {
+            if (reply->error() >= QNetworkReply::ConnectionRefusedError && reply->error() <= QNetworkReply::UnknownNetworkError) {
+                setServerOnline(false);
+            }
             QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
             QString errStr = doc.object().value("error").toString();
             if (errStr.isEmpty()) errStr = reply->errorString();
@@ -263,7 +369,9 @@ void PosController::simulatePaymentWebhook(const QString& txCode, const QString&
     payload["status"] = status;
     payload["gateway_reference"] = "mock_gw_ref_882";
 
-    QNetworkRequest req(QUrl(m_serverUrl + "/payments/webhook"));
+    QUrl reqUrl(m_serverUrl + "/payments/webhook");
+    QNetworkRequest req(reqUrl);
+    req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     QNetworkReply* reply = m_netManager.post(req, QJsonDocument(payload).toJson(QJsonDocument::Compact));
@@ -271,6 +379,7 @@ void PosController::simulatePaymentWebhook(const QString& txCode, const QString&
         reply->deleteLater();
         setBusy(false);
         if (reply->error() == QNetworkReply::NoError) {
+            setServerOnline(true);
             setStatus(QString("Webhook simulated for %1: Status updated to %2").arg(txCode).arg(status));
         } else {
             setStatus("Webhook simulation failed.");

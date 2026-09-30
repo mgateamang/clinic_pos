@@ -19,9 +19,12 @@ class PosController : public QObject {
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(QString lastReceiptCode READ lastReceiptCode NOTIFY lastReceiptCodeChanged)
     Q_PROPERTY(bool isBusy READ isBusy NOTIFY isBusyChanged)
+    Q_PROPERTY(bool isServerOnline READ isServerOnline NOTIFY isServerOnlineChanged)
+    Q_PROPERTY(QString serverUrl READ serverUrl NOTIFY serverUrlChanged)
+    Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY connectionStatusChanged)
 
 public:
-    explicit PosController(QObject* parent = nullptr);
+    explicit PosController(const QString& configPath = "config.ini", QObject* parent = nullptr);
     ~PosController() override = default;
 
     QVariantList catalog() const { return m_catalog; }
@@ -31,7 +34,13 @@ public:
     QString statusMessage() const { return m_statusMessage; }
     QString lastReceiptCode() const { return m_lastReceiptCode; }
     bool isBusy() const { return m_isBusy; }
+    bool isServerOnline() const { return m_isServerOnline; }
+    QString serverUrl() const { return m_serverUrl; }
+    QString connectionStatus() const { return m_connectionStatus; }
 
+    Q_INVOKABLE void loadConfig();
+    Q_INVOKABLE void saveServerUrl(const QString& url);
+    Q_INVOKABLE void testConnection(const QString& targetUrl);
     Q_INVOKABLE void setServerUrl(const QString& url);
     Q_INVOKABLE void refreshData();
     Q_INVOKABLE void loadPrescription(const QString& rxCode);
@@ -53,10 +62,16 @@ signals:
     void statusMessageChanged();
     void lastReceiptCodeChanged();
     void isBusyChanged();
+    void isServerOnlineChanged();
+    void serverUrlChanged();
+    void connectionStatusChanged();
     void checkoutCompleted(const QString& txCode, double total, const QString& status);
 
 private:
+    QString m_configPath{"config.ini"};
     QString m_serverUrl{"http://localhost:8080/api/v1"};
+    QString m_connectionStatus;
+    bool m_isServerOnline{true};
     QVariantList m_catalog;
     QVariantList m_lowStockAlerts;
     QVariantList m_cart;
@@ -68,6 +83,8 @@ private:
 
     void setStatus(const QString& msg);
     void setBusy(bool busy);
+    void setServerOnline(bool online);
+    void setConnectionStatus(const QString& status);
     void updateTotal();
 };
 

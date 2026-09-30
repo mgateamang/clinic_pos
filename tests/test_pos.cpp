@@ -1,4 +1,5 @@
 #include <QCoreApplication>
+#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -10,12 +11,29 @@
 void runPosTests() {
     std::cout << "[TEST] Running PosController Unit Tests...\n";
 
+    // Test Config Persistence
+    QString testConfig = "test_pos_config.ini";
+    if (QFile::exists(testConfig)) QFile::remove(testConfig);
+
+    {
+        aidans::PosController ctrlCfg(testConfig);
+        assert(ctrlCfg.serverUrl() == "http://localhost:8080/api/v1");
+        ctrlCfg.saveServerUrl("http://192.168.1.99:8080/api/v1");
+    }
+
+    {
+        aidans::PosController ctrlReload(testConfig);
+        assert(ctrlReload.serverUrl() == "http://192.168.1.99:8080/api/v1");
+    }
+    if (QFile::exists(testConfig)) QFile::remove(testConfig);
+
     aidans::PosController ctrl;
 
     // 1. Initial State
     assert(ctrl.cart().isEmpty());
     assert(ctrl.totalAmount() == 0.0);
     assert(!ctrl.isBusy());
+    assert(ctrl.isServerOnline());
 
     // 2. Reject Invalid Items
     std::cout << "[TEST] Testing validation for invalid cart additions...\n";

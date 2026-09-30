@@ -20,10 +20,24 @@ ApplicationWindow {
             Layout.fillHeight: true
             spacing: 12
 
-            Label {
-                text: "Pharmacy Point-of-Sale (POS)"
-                font.pixelSize: 20
-                font.bold: true
+            RowLayout {
+                Layout.fillWidth: true
+
+                Label {
+                    text: "Pharmacy Point-of-Sale (POS)"
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    text: "⚙ Settings"
+                    onClicked: {
+                        serverUrlField.text = controller.serverUrl;
+                        settingsDialog.open();
+                    }
+                }
             }
 
             // Prescription Lookup Row
@@ -292,6 +306,124 @@ ApplicationWindow {
                             enabled: controller.lastReceiptCode.length > 0
                             onClicked: controller.simulatePaymentWebhook(controller.lastReceiptCode, "PAID")
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // Settings Dialog
+    Dialog {
+        id: settingsDialog
+        title: "Server Configuration"
+        anchors.centerIn: parent
+        width: 440
+        modal: true
+        standardButtons: Dialog.Close
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 12
+
+            Label {
+                text: "Configure Clinic Server Backend URL:"
+                font.bold: true
+            }
+
+            TextField {
+                id: serverUrlField
+                Layout.fillWidth: true
+                text: controller.serverUrl
+                placeholderText: "http://localhost:8080/api/v1"
+            }
+
+            RowLayout {
+                spacing: 8
+                Button {
+                    text: "Test Connection"
+                    onClicked: controller.testConnection(serverUrlField.text)
+                }
+
+                Button {
+                    text: "Save & Apply"
+                    highlighted: true
+                    onClicked: {
+                        controller.saveServerUrl(serverUrlField.text);
+                        controller.refreshData();
+                        settingsDialog.close();
+                    }
+                }
+            }
+
+            Label {
+                text: controller.connectionStatus
+                color: controller.isServerOnline ? "#15803d" : "#b91c1c"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                visible: controller.connectionStatus.length > 0
+            }
+        }
+    }
+
+    // Server Offline Error Overlay
+    Rectangle {
+        id: offlineOverlay
+        anchors.fill: parent
+        color: "#f8fafc"
+        visible: !controller.isServerOnline
+        z: 99
+
+        ColumnLayout {
+            anchors.centerIn: parent
+            spacing: 16
+            width: Math.min(480, parent.width - 40)
+
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                width: 64
+                height: 64
+                radius: 32
+                color: "#fee2e2"
+                Label {
+                    anchors.centerIn: parent
+                    text: "⚠"
+                    font.pixelSize: 32
+                    color: "#dc2626"
+                }
+            }
+
+            Label {
+                Layout.alignment: Qt.AlignHCenter
+                text: "Clinic Server Offline or Unreachable"
+                font.pixelSize: 20
+                font.bold: true
+                color: "#991b1b"
+            }
+
+            Label {
+                Layout.alignment: Qt.AlignHCenter
+                text: "The POS system cannot establish a connection to the backend server at:\n" + controller.serverUrl
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                color: "#64748b"
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 12
+
+                Button {
+                    text: "Retry Connection"
+                    highlighted: true
+                    onClicked: controller.refreshData()
+                }
+
+                Button {
+                    text: "⚙ Server Settings"
+                    onClicked: {
+                        serverUrlField.text = controller.serverUrl;
+                        settingsDialog.open();
                     }
                 }
             }
