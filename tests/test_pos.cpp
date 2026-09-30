@@ -18,12 +18,16 @@ void runPosTests() {
     {
         aidans::PosController ctrlCfg(testConfig);
         assert(ctrlCfg.serverUrl() == "http://localhost:8080/api/v1");
-        ctrlCfg.saveServerUrl("http://192.168.1.99:8080/api/v1");
+        assert(ctrlCfg.redisHost() == "localhost");
+        assert(ctrlCfg.redisPort() == 6379);
+        ctrlCfg.saveConfig("http://192.168.1.99:8080/api/v1", "192.168.1.50", 6380);
     }
 
     {
         aidans::PosController ctrlReload(testConfig);
         assert(ctrlReload.serverUrl() == "http://192.168.1.99:8080/api/v1");
+        assert(ctrlReload.redisHost() == "192.168.1.50");
+        assert(ctrlReload.redisPort() == 6380);
     }
     if (QFile::exists(testConfig)) QFile::remove(testConfig);
 

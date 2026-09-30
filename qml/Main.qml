@@ -5,7 +5,7 @@ import QtQuick.Layouts
 ApplicationWindow {
     id: root
     visible: true
-    width: 900
+    width: 920
     height: 680
     title: "AIDANS - Pharmacy POS & Real-Time Inventory (Elizabeth's Clinic)"
 
@@ -29,12 +29,43 @@ ApplicationWindow {
                     font.bold: true
                 }
 
+                // Live Redis Sync Badge
+                Rectangle {
+                    height: 24
+                    radius: 12
+                    color: controller.isRedisConnected ? "#dcfce7" : "#f1f5f9"
+                    border.color: controller.isRedisConnected ? "#86efac" : "#cbd5e1"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        Rectangle {
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: controller.isRedisConnected ? "#16a34a" : "#94a3b8"
+                        }
+
+                        Label {
+                            text: controller.isRedisConnected ? "Real-Time Redis Sync" : "Redis Sync Inactive"
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: controller.isRedisConnected ? "#15803d" : "#64748b"
+                        }
+                    }
+                }
+
                 Item { Layout.fillWidth: true }
 
                 Button {
                     text: "⚙ Settings"
                     onClicked: {
                         serverUrlField.text = controller.serverUrl;
+                        redisHostField.text = controller.redisHost;
+                        redisPortField.text = controller.redisPort.toString();
                         settingsDialog.open();
                     }
                 }
@@ -217,7 +248,7 @@ ApplicationWindow {
 
         // Right Area: Low Stock & Reorder Alerts
         Rectangle {
-            Layout.preferredWidth: 260
+            Layout.preferredWidth: 280
             Layout.fillHeight: true
             color: "#fffbeb"
             border.color: "#fde68a"
@@ -228,15 +259,25 @@ ApplicationWindow {
                 anchors.margins: 12
                 spacing: 8
 
-                Label {
-                    text: "⚠ Reorder Alerts (" + controller.lowStockAlerts.length + ")"
-                    font.bold: true
-                    color: "#b45309"
-                    font.pixelSize: 14
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "⚠ Reorder Alerts (" + controller.lowStockAlerts.length + ")"
+                        font.bold: true
+                        color: "#b45309"
+                        font.pixelSize: 14
+                    }
+                    Item { Layout.fillWidth: true }
+                    Rectangle {
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: controller.isRedisConnected ? "#16a34a" : "#cbd5e1"
+                    }
                 }
 
                 Label {
-                    text: "Automated inventory tracking"
+                    text: "Auto-synced via Redis Pub/Sub"
                     font.pixelSize: 11
                     color: "#78350f"
                 }
@@ -287,7 +328,7 @@ ApplicationWindow {
 
                 Button {
                     Layout.fillWidth: true
-                    text: "Refresh Alerts"
+                    text: "Manual Refresh"
                     onClicked: controller.refreshData()
                 }
 
@@ -315,9 +356,9 @@ ApplicationWindow {
     // Settings Dialog
     Dialog {
         id: settingsDialog
-        title: "Server Configuration"
+        title: "Server & Real-Time Sync Configuration"
         anchors.centerIn: parent
-        width: 440
+        width: 460
         modal: true
         standardButtons: Dialog.Close
 
@@ -326,7 +367,7 @@ ApplicationWindow {
             spacing: 12
 
             Label {
-                text: "Configure Clinic Server Backend URL:"
+                text: "Clinic Server Backend URL:"
                 font.bold: true
             }
 
@@ -340,18 +381,8 @@ ApplicationWindow {
             RowLayout {
                 spacing: 8
                 Button {
-                    text: "Test Connection"
+                    text: "Test Server Connection"
                     onClicked: controller.testConnection(serverUrlField.text)
-                }
-
-                Button {
-                    text: "Save & Apply"
-                    highlighted: true
-                    onClicked: {
-                        controller.saveServerUrl(serverUrlField.text);
-                        controller.refreshData();
-                        settingsDialog.close();
-                    }
                 }
             }
 
@@ -361,6 +392,72 @@ ApplicationWindow {
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
                 visible: controller.connectionStatus.length > 0
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: "#e2e8f0"
+            }
+
+            Label {
+                text: "Redis Real-Time Pub/Sub Broker:"
+                font.bold: true
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Label { text: "Host / IP:" }
+                    TextField {
+                        id: redisHostField
+                        Layout.fillWidth: true
+                        text: controller.redisHost
+                        placeholderText: "localhost"
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.preferredWidth: 100
+                    Label { text: "Port:" }
+                    TextField {
+                        id: redisPortField
+                        Layout.fillWidth: true
+                        text: controller.redisPort.toString()
+                        placeholderText: "6379"
+                    }
+                }
+            }
+
+            Label {
+                text: "Status: " + controller.redisStatus
+                color: controller.isRedisConnected ? "#15803d" : "#b45309"
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 8
+
+                Button {
+                    text: "Reconnect Redis"
+                    onClicked: controller.reconnectRedis()
+                }
+
+                Button {
+                    text: "Save & Apply"
+                    highlighted: true
+                    onClicked: {
+                        controller.saveConfig(serverUrlField.text, redisHostField.text, parseInt(redisPortField.text));
+                        controller.refreshData();
+                        settingsDialog.close();
+                    }
+                }
             }
         }
     }
@@ -423,6 +520,8 @@ ApplicationWindow {
                     text: "⚙ Server Settings"
                     onClicked: {
                         serverUrlField.text = controller.serverUrl;
+                        redisHostField.text = controller.redisHost;
+                        redisPortField.text = controller.redisPort.toString();
                         settingsDialog.open();
                     }
                 }

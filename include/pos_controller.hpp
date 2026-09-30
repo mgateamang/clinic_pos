@@ -6,6 +6,8 @@
 #include <QVariantMap>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QTcpSocket>
+#include <QTimer>
 
 namespace aidans {
 
@@ -22,6 +24,10 @@ class PosController : public QObject {
     Q_PROPERTY(bool isServerOnline READ isServerOnline NOTIFY isServerOnlineChanged)
     Q_PROPERTY(QString serverUrl READ serverUrl NOTIFY serverUrlChanged)
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY connectionStatusChanged)
+    Q_PROPERTY(QString redisHost READ redisHost NOTIFY redisConfigChanged)
+    Q_PROPERTY(int redisPort READ redisPort NOTIFY redisConfigChanged)
+    Q_PROPERTY(bool isRedisConnected READ isRedisConnected NOTIFY isRedisConnectedChanged)
+    Q_PROPERTY(QString redisStatus READ redisStatus NOTIFY redisStatusChanged)
 
 public:
     explicit PosController(const QString& configPath = "config.ini", QObject* parent = nullptr);
@@ -37,10 +43,16 @@ public:
     bool isServerOnline() const { return m_isServerOnline; }
     QString serverUrl() const { return m_serverUrl; }
     QString connectionStatus() const { return m_connectionStatus; }
+    QString redisHost() const { return m_redisHost; }
+    int redisPort() const { return m_redisPort; }
+    bool isRedisConnected() const { return m_isRedisConnected; }
+    QString redisStatus() const { return m_redisStatus; }
 
     Q_INVOKABLE void loadConfig();
     Q_INVOKABLE void saveServerUrl(const QString& url);
+    Q_INVOKABLE void saveConfig(const QString& url, const QString& redisHost, int redisPort);
     Q_INVOKABLE void testConnection(const QString& targetUrl);
+    Q_INVOKABLE void reconnectRedis();
     Q_INVOKABLE void setServerUrl(const QString& url);
     Q_INVOKABLE void refreshData();
     Q_INVOKABLE void loadPrescription(const QString& rxCode);
@@ -65,6 +77,9 @@ signals:
     void isServerOnlineChanged();
     void serverUrlChanged();
     void connectionStatusChanged();
+    void redisConfigChanged();
+    void isRedisConnectedChanged();
+    void redisStatusChanged();
     void checkoutCompleted(const QString& txCode, double total, const QString& status);
 
 private:
@@ -72,6 +87,15 @@ private:
     QString m_serverUrl{"http://localhost:8080/api/v1"};
     QString m_connectionStatus;
     bool m_isServerOnline{true};
+
+    // Redis Pub/Sub Subscriber
+    QString m_redisHost{"localhost"};
+    int m_redisPort{6379};
+    bool m_isRedisConnected{false};
+    QString m_redisStatus{"Disconnected"};
+    QTcpSocket* m_redisSocket{nullptr};
+    QTimer* m_redisReconnectTimer{nullptr};
+
     QVariantList m_catalog;
     QVariantList m_lowStockAlerts;
     QVariantList m_cart;
@@ -86,6 +110,8 @@ private:
     void setServerOnline(bool online);
     void setConnectionStatus(const QString& status);
     void updateTotal();
+    void initRedisSubscriber();
+    void scheduleRedisReconnect();
 };
 
 } // namespace aidans

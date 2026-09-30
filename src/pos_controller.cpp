@@ -18,28 +18,113 @@ void PosController::loadConfig() {
         QSettings settings(m_configPath, QSettings::IniFormat);
         settings.beginGroup("Server");
         QString url = settings.value("url", m_serverUrl).toString();
+        m_redisHost = settings.value("redis_host", m_redisHost).toString();
+        m_redisPort = settings.value("redis_port", m_redisPort).toInt();
         settings.endGroup();
         if (!url.isEmpty()) {
             m_serverUrl = url;
             emit serverUrlChanged();
         }
+        emit redisConfigChanged();
     }
+    initRedisSubscriber();
 }
 
-void PosController::saveServerUrl(const QString& url) {
-    QString trimmed = url.trimmed();
-    if (trimmed.isEmpty()) return;
+void PosController::saveConfig(const QString& url, const QString& redisHost, int redisPort) {
+    QString trimmedUrl = url.trimmed();
+    QString trimmedRedisHost = redisHost.trimmed().isEmpty() ? "localhost" : redisHost.trimmed();
+    int validPort = redisPort <= 0 ? 6379 : redisPort;
 
-    m_serverUrl = trimmed;
-    emit serverUrlChanged();
+    if (!trimmedUrl.isEmpty()) {
+        m_serverUrl = trimmedUrl;
+        emit serverUrlChanged();
+    }
+
+    m_redisHost = trimmedRedisHost;
+    m_redisPort = validPort;
+    emit redisConfigChanged();
 
     QSettings settings(m_configPath, QSettings::IniFormat);
     settings.beginGroup("Server");
     settings.setValue("url", m_serverUrl);
+    settings.setValue("redis_host", m_redisHost);
+    settings.setValue("redis_port", m_redisPort);
     settings.endGroup();
     settings.sync();
 
-    setStatus("Server URL saved to " + m_configPath);
+    reconnectRedis();
+    setStatus("Configuration saved to " + m_configPath);
+}
+
+void PosController::saveServerUrl(const QString& url) {
+    saveConfig(url, m_redisHost, m_redisPort);
+}
+
+void PosController::initRedisSubscriber() {
+    if (!m_redisSocket) {
+        m_redisSocket = new QTcpSocket(this);
+
+        connect(m_redisSocket, &QTcpSocket::connected, this, [this]() {
+            m_isRedisConnected = true;
+            m_redisStatus = QString("Connected to %1:%2 (listening on inventory_updates)").arg(m_redisHost).arg(m_redisPort);
+            emit isRedisConnectedChanged();
+            emit redisStatusChanged();
+
+            // Send Redis SUBSCRIBE command for inventory updates channel
+            m_redisSocket->write("SUBSCRIBE inventory_updates\r\n");
+            m_redisSocket->flush();
+            setStatus("Connected to Redis real-time sync.");
+        });
+
+        connect(m_redisSocket, &QTcpSocket::disconnected, this, [this]() {
+            m_isRedisConnected = false;
+            m_redisStatus = "Disconnected";
+            emit isRedisConnectedChanged();
+            emit redisStatusChanged();
+            scheduleRedisReconnect();
+        });
+
+        connect(m_redisSocket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
+            m_isRedisConnected = false;
+            m_redisStatus = "Redis offline: " + m_redisSocket->errorString();
+            emit isRedisConnectedChanged();
+            emit redisStatusChanged();
+            scheduleRedisReconnect();
+        });
+
+        connect(m_redisSocket, &QTcpSocket::readyRead, this, [this]() {
+            QByteArray data = m_redisSocket->readAll();
+            // Redis pub/sub push format contains channel name and payload
+            if (data.contains("inventory_updates") && (data.contains("message") || data.contains("event") || data.contains("action"))) {
+                refreshData();
+                setStatus("Real-time inventory ripple update received from Redis.");
+            }
+        });
+    }
+
+    reconnectRedis();
+}
+
+void PosController::reconnectRedis() {
+    if (m_redisSocket) {
+        m_redisSocket->abort();
+        m_redisSocket->connectToHost(m_redisHost, m_redisPort);
+    }
+}
+
+void PosController::scheduleRedisReconnect() {
+    if (!m_redisReconnectTimer) {
+        m_redisReconnectTimer = new QTimer(this);
+        m_redisReconnectTimer->setSingleShot(true);
+        connect(m_redisReconnectTimer, &QTimer::timeout, this, [this]() {
+            if (!m_isRedisConnected) {
+                reconnectRedis();
+            }
+        });
+    }
+    if (!m_redisReconnectTimer->isActive()) {
+        m_redisReconnectTimer->start(3000);
+    }
 }
 
 void PosController::setServerUrl(const QString& url) {
@@ -100,7 +185,8 @@ void PosController::testConnection(const QString& targetUrl) {
             QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
             QString service = doc.object().value("service").toString();
             QString version = doc.object().value("version").toString();
-            setConnectionStatus(QString("Connected to %1 (%2 v%3)").arg(urlStr).arg(service).arg(version));
+            QString redisInfo = doc.object().value("redis").toString();
+            setConnectionStatus(QString("Connected to %1 (%2 v%3, Redis: %4)").arg(urlStr).arg(service).arg(version).arg(redisInfo));
             setServerOnline(true);
         } else {
             setConnectionStatus("Failed to connect: " + reply->errorString());
