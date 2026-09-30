@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("controller", &controller);
 
-    const QUrl url(QStringLiteral("qrc:/../qml/Main.qml"));
+    const QUrl url(QStringLiteral("qrc:/Main.qml"));
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreated,
