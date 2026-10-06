@@ -348,66 +348,15 @@ ApplicationWindow {
                 visible: controller.connectionStatus.length > 0
             }
 
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: "#e2e8f0"
-            }
-
-            Label {
-                text: "Redis Real-Time Pub/Sub Broker:"
-                font.bold: true
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Label { text: "Host / IP:" }
-                    TextField {
-                        id: redisHostField
-                        Layout.fillWidth: true
-                        text: controller.redisHost
-                        placeholderText: "localhost"
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.preferredWidth: 100
-                    Label { text: "Port:" }
-                    TextField {
-                        id: redisPortField
-                        Layout.fillWidth: true
-                        text: controller.redisPort.toString()
-                        placeholderText: "6379"
-                    }
-                }
-            }
-
-            Label {
-                text: "Status: " + controller.redisStatus
-                color: controller.isRedisConnected ? "#15803d" : "#b45309"
-                font.pixelSize: 11
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
-
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 spacing: 8
 
                 Button {
-                    text: "Reconnect Redis"
-                    onClicked: controller.reconnectRedis()
-                }
-
-                Button {
                     text: "Save & Apply"
                     highlighted: true
                     onClicked: {
-                        controller.saveConfig(serverUrlField.text, redisHostField.text, parseInt(redisPortField.text));
+                        controller.saveServerUrl(serverUrlField.text);
                         controller.refreshData();
                         settingsDialog.close();
                     }
