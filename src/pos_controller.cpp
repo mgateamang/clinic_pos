@@ -1,3 +1,11 @@
+/**
+ * @file pos_controller.cpp
+ * @brief Implementation of PosController for Qt6 / QML Pharmacy POS client.
+ *
+ * Implements prescription code lookups, shopping cart mathematics,
+ * atomic sale dispatch to /api/v1/pos/checkout, and offline state handling.
+ */
+
 #include "pos_controller.hpp"
 #include <QSettings>
 #include <QFileInfo>
@@ -8,6 +16,9 @@
 
 namespace aidans {
 
+/**
+ * @brief Constructs the controller and initializes config and network monitors.
+ */
 PosController::PosController(const QString& configPath, QObject* parent)
     : QObject(parent), m_configPath(configPath) {
     loadConfig();
