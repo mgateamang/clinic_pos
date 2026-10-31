@@ -365,6 +365,13 @@ ApplicationWindow { // Execute clinical workflow step
         } // Close active scope block
     } // Close active scope block
 
+    Timer {
+        interval: 20000
+        running: true
+        repeat: true
+        onTriggered: if (!controller.isBusy) controller.refreshData()
+    }
+
     Component.onCompleted: { // Execute clinical workflow step
         controller.refreshData(); // Execute clinical workflow step
     } // Close active scope block
